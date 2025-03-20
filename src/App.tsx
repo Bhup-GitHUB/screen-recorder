@@ -706,6 +706,8 @@ function App() {
             </div>
           )}
 
+          {/* add some more features in future */}
+
           <div className="mt-8 text-center text-gray-400 text-sm">
             {isRecording ? (
               <p className="animate-pulse">
