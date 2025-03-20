@@ -681,7 +681,7 @@ function App() {
                   Capture Screenshot
                 </button>
               </div>
-
+              {/* changed name to capture wizrd to screen capture */}
               {screenshotUrl && (
                 <div className="space-y-4">
                   <div className="relative rounded-lg overflow-hidden border-2 border-gray-300">
