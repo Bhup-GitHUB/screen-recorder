@@ -14,6 +14,10 @@ import {
   Clock,
   Info,
   X,
+  ChevronUp,
+  ChevronDown,
+  Scissors,
+  Camera,
 } from "lucide-react";
 
 function App() {
@@ -27,10 +31,15 @@ function App() {
   const [recordingQuality, setRecordingQuality] = useState("high");
   const [showSettings, setShowSettings] = useState(false);
   const [showTips, setShowTips] = useState(false);
+  const [clipDuration, setClipDuration] = useState(30); // New feature 1: Set clip duration in seconds
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false); // For expandable settings
+  const [isTakingScreenshot, setIsTakingScreenshot] = useState(false); // New feature 2: Screenshot mode
+  const [screenshotUrl, setScreenshotUrl] = useState(""); // To store screenshot URL
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamsRef = useRef<MediaStream[]>([]);
   const timerRef = useRef<number | null>(null);
+  const clipTimerRef = useRef<number | null>(null); // For clip duration timer
 
   // Recording timer
   useEffect(() => {
@@ -39,17 +48,32 @@ function App() {
       timerRef.current = window.setInterval(() => {
         setRecordingTime((prevTime) => prevTime + 1);
       }, 1000);
+
+      // Auto-stop recording if clip duration is set and not 0
+      if (clipDuration > 0) {
+        clipTimerRef.current = window.setTimeout(() => {
+          stopRecording();
+        }, clipDuration * 1000);
+      }
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+
+      if (clipTimerRef.current) {
+        clearTimeout(clipTimerRef.current);
+        clipTimerRef.current = null;
+      }
     }
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      if (clipTimerRef.current) {
+        clearTimeout(clipTimerRef.current);
+      }
     };
-  }, [isRecording]);
+  }, [isRecording, clipDuration]);
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -124,6 +148,7 @@ function App() {
       mediaRecorder.start();
       setIsRecording(true);
       setPreviewUrl("");
+      setScreenshotUrl(""); // Clear any existing screenshots
     } catch (err) {
       console.error("Error starting recording:", err);
     }
@@ -168,6 +193,70 @@ function App() {
     a.download = `screen-recording_${formattedDate}.webm`;
     a.click();
     URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
+  // New feature 2: Take screenshot function
+  const takeScreenshot = async () => {
+    try {
+      setIsTakingScreenshot(true);
+
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: recordingQuality === "high" ? 1920 : 1280,
+          height: recordingQuality === "high" ? 1080 : 720,
+        },
+      });
+
+      // Create video element to capture the first frame
+      const videoElem = document.createElement("video");
+      videoElem.srcObject = displayStream;
+
+      videoElem.onloadedmetadata = () => {
+        videoElem.play();
+
+        // Create canvas to draw the screenshot
+        const canvas = document.createElement("canvas");
+        canvas.width = videoElem.videoWidth;
+        canvas.height = videoElem.videoHeight;
+
+        // Wait a tiny bit to ensure the video is actually playing
+        setTimeout(() => {
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(videoElem, 0, 0);
+
+          // Convert to image URL
+          const screenshotUrl = canvas.toDataURL("image/png");
+          setScreenshotUrl(screenshotUrl);
+
+          // Stop the stream
+          displayStream.getTracks().forEach((track) => track.stop());
+          setIsTakingScreenshot(false);
+        }, 100);
+      };
+    } catch (err) {
+      console.error("Error taking screenshot:", err);
+      setIsTakingScreenshot(false);
+    }
+  };
+
+  // Download screenshot
+  const downloadScreenshot = () => {
+    if (!screenshotUrl) return;
+
+    const a = document.createElement("a");
+    document.body.appendChild(a);
+    a.style.display = "none";
+    a.href = screenshotUrl;
+    const date = new Date();
+    const formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}_${date
+      .getHours()
+      .toString()
+      .padStart(2, "0")}-${date.getMinutes().toString().padStart(2, "0")}`;
+    a.download = `screenshot_${formattedDate}.png`;
+    a.click();
     document.body.removeChild(a);
   };
 
@@ -268,7 +357,7 @@ function App() {
 
       {/* Main Content - Flexible space */}
       <main className="flex-grow px-4 py-8">
-        {/* Settings Panel */}
+        {/* Settings Panel - Improved with expandable sections */}
         {showSettings && (
           <div
             className={`${
@@ -314,6 +403,69 @@ function App() {
                   </label>
                 </div>
               </div>
+
+              {/* New Feature 1: Auto-stop recording after specified duration */}
+              <div>
+                <label className="block mb-2 font-medium">
+                  Auto-stop recording after
+                </label>
+                <div className="flex items-center">
+                  <input
+                    type="range"
+                    min="0"
+                    max="300"
+                    step="10"
+                    value={clipDuration}
+                    onChange={(e) => setClipDuration(Number(e.target.value))}
+                    className={`w-full ${
+                      darkMode ? "bg-gray-600" : "bg-gray-200"
+                    }`}
+                  />
+                  <span className="ml-3 w-16 text-center">
+                    {clipDuration === 0 ? "Off" : `${clipDuration}s`}
+                  </span>
+                </div>
+                <p className="text-xs mt-1 text-gray-400">
+                  Set to 0 to disable auto-stop
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                className={`flex items-center justify-between w-full p-2 rounded ${
+                  darkMode
+                    ? "bg-gray-600 hover:bg-gray-500"
+                    : "bg-gray-200 hover:bg-gray-300"
+                } transition-colors duration-200`}
+              >
+                <span>Advanced Options</span>
+                {showAdvancedOptions ? (
+                  <ChevronUp size={16} />
+                ) : (
+                  <ChevronDown size={16} />
+                )}
+              </button>
+
+              {showAdvancedOptions && (
+                <div className="p-3 rounded bg-opacity-50 bg-black space-y-3">
+                  <div>
+                    <label className="block mb-2 text-sm font-medium">
+                      File Format
+                    </label>
+                    <select
+                      className={`w-full p-2 rounded ${
+                        darkMode ? "bg-gray-600" : "bg-white"
+                      }`}
+                      defaultValue="webm"
+                    >
+                      <option value="webm">WebM (Recommended)</option>
+                      <option value="mp4" disabled>
+                        MP4 (Browser Limited)
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -348,9 +500,51 @@ function App() {
               <li>
                 For longer recordings, ensure you have sufficient disk space
               </li>
+              <li>
+                Use the auto-stop feature for creating clips of exact length
+              </li>
+              <li>
+                Take screenshots for quick sharing without full recordings
+              </li>
             </ul>
           </div>
         )}
+
+        {/* Mode selector (record or screenshot) */}
+        <div className="flex justify-center mb-6">
+          <div
+            className={`inline-flex rounded-lg p-1 ${
+              darkMode ? "bg-gray-700" : "bg-white"
+            } shadow-md`}
+          >
+            <button
+              onClick={() => setIsTakingScreenshot(false)}
+              className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                !isTakingScreenshot
+                  ? darkMode
+                    ? "bg-green-500 text-white"
+                    : "bg-blue-600 text-white"
+                  : ""
+              }`}
+            >
+              <Video size={18} />
+              <span className="hidden sm:inline">Record</span>
+            </button>
+            <button
+              onClick={() => setIsTakingScreenshot(true)}
+              className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
+                isTakingScreenshot
+                  ? darkMode
+                    ? "bg-purple-500 text-white"
+                    : "bg-purple-600 text-white"
+                  : ""
+              }`}
+            >
+              <Camera size={18} />
+              <span className="hidden sm:inline">Screenshot</span>
+            </button>
+          </div>
+        </div>
 
         <div
           className={`${
@@ -358,105 +552,167 @@ function App() {
           } p-4 sm:p-8 rounded-xl shadow-2xl backdrop-blur-sm max-w-2xl mx-auto`}
         >
           <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8">
-            Screen Recorder
+            {isTakingScreenshot ? "Screen Capture" : "Screen Recorder"}
           </h2>
 
-          <div className="space-y-6">
-            <div className="flex justify-center items-center gap-4">
-              <button
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`p-3 rounded-full ${
-                  audioEnabled
-                    ? darkMode
-                      ? "bg-green-500/20 text-green-400"
-                      : "bg-green-500/20 text-green-600"
-                    : darkMode
-                    ? "bg-red-500/20 text-red-400"
-                    : "bg-red-500/20 text-red-600"
-                } transition-colors duration-200 ${
-                  isRecording ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-                title={audioEnabled ? "Audio Enabled" : "Audio Disabled"}
-                disabled={isRecording}
-              >
-                {audioEnabled ? <Mic size={24} /> : <MicOff size={24} />}
-              </button>
-
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 ${
-                  isRecording
-                    ? "bg-red-500 hover:bg-red-600"
-                    : darkMode
-                    ? "bg-blue-500 hover:bg-blue-600"
-                    : "bg-blue-600 hover:bg-blue-700"
-                } transition-colors duration-200 text-white`}
-              >
-                {isRecording ? (
-                  <>
-                    <Square size={20} /> Stop Recording
-                  </>
-                ) : (
-                  <>
-                    <Video size={20} /> Start Recording
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Recording Timer */}
-            {isRecording && (
-              <div className="flex justify-center items-center mt-4">
-                <div
-                  className={`flex items-center gap-2 p-3 rounded-lg ${
-                    darkMode ? "bg-gray-700" : "bg-white"
+          {/* Recording UI */}
+          {!isTakingScreenshot && (
+            <div className="space-y-6">
+              <div className="flex justify-center items-center gap-4">
+                <button
+                  onClick={() => setAudioEnabled(!audioEnabled)}
+                  className={`p-3 rounded-full ${
+                    audioEnabled
+                      ? darkMode
+                        ? "bg-green-500/20 text-green-400"
+                        : "bg-green-500/20 text-green-600"
+                      : darkMode
+                      ? "bg-red-500/20 text-red-400"
+                      : "bg-red-500/20 text-red-600"
+                  } transition-colors duration-200 ${
+                    isRecording ? "opacity-50 cursor-not-allowed" : ""
                   }`}
+                  title={audioEnabled ? "Audio Enabled" : "Audio Disabled"}
+                  disabled={isRecording}
                 >
-                  <Clock size={18} className="text-red-500 animate-pulse" />
-                  <span className="font-mono font-bold">
-                    {formatTime(recordingTime)}
-                  </span>
-                </div>
-              </div>
-            )}
+                  {audioEnabled ? <Mic size={24} /> : <MicOff size={24} />}
+                </button>
 
-            {previewUrl && (
-              <div className="space-y-4">
-                <div className="relative rounded-lg overflow-hidden bg-black">
-                  <video
-                    ref={videoRef}
-                    src={previewUrl}
-                    className="w-full"
-                    onEnded={() => setIsPlaying(false)}
-                  />
-                  <div className="absolute bottom-4 left-4 flex gap-2">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`px-4 sm:px-6 py-3 rounded-full flex items-center gap-2 ${
+                    isRecording
+                      ? "bg-red-500 hover:bg-red-600"
+                      : darkMode
+                      ? "bg-blue-500 hover:bg-blue-600"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  } transition-colors duration-200 text-white`}
+                >
+                  {isRecording ? (
+                    <>
+                      <Square size={20} /> Stop Recording
+                    </>
+                  ) : (
+                    <>
+                      <Video size={20} /> Start Recording
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Auto-stop indicator */}
+              {isRecording && clipDuration > 0 && (
+                <div className="flex justify-center items-center mt-2">
+                  <div
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs ${
+                      darkMode
+                        ? "bg-amber-500/20 text-amber-300"
+                        : "bg-amber-500/20 text-amber-700"
+                    }`}
+                  >
+                    <Scissors size={12} />
+                    <span>Will auto-stop after {clipDuration}s</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Recording Timer */}
+              {isRecording && (
+                <div className="flex justify-center items-center mt-4">
+                  <div
+                    className={`flex items-center gap-2 p-3 rounded-lg ${
+                      darkMode ? "bg-gray-700" : "bg-white"
+                    }`}
+                  >
+                    <Clock size={18} className="text-red-500 animate-pulse" />
+                    <span className="font-mono font-bold">
+                      {formatTime(recordingTime)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {previewUrl && (
+                <div className="space-y-4">
+                  <div className="relative rounded-lg overflow-hidden bg-black">
+                    <video
+                      ref={videoRef}
+                      src={previewUrl}
+                      className="w-full"
+                      onEnded={() => setIsPlaying(false)}
+                    />
+                    <div className="absolute bottom-4 left-4 flex gap-2">
+                      <button
+                        onClick={togglePlayback}
+                        className="p-3 rounded-full bg-white/20 hover:bg-white/30 transition-colors duration-200"
+                      >
+                        {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-center">
                     <button
-                      onClick={togglePlayback}
-                      className="p-3 rounded-full bg-white/20 hover:bg-white/30 transition-colors duration-200"
+                      onClick={downloadRecording}
+                      className="px-6 py-3 rounded-full bg-green-500 hover:bg-green-600 flex items-center gap-2 transition-colors duration-200 text-white"
                     >
-                      {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+                      <Download size={20} />
+                      Download Recording
                     </button>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
 
-                <div className="flex justify-center">
-                  <button
-                    onClick={downloadRecording}
-                    className="px-6 py-3 rounded-full bg-green-500 hover:bg-green-600 flex items-center gap-2 transition-colors duration-200 text-white"
-                  >
-                    <Download size={20} />
-                    Download Recording
-                  </button>
-                </div>
+          {/* Screenshot UI */}
+          {isTakingScreenshot && (
+            <div className="space-y-6">
+              <div className="flex justify-center items-center">
+                <button
+                  onClick={takeScreenshot}
+                  className={`px-6 py-3 rounded-full flex items-center gap-2 ${
+                    darkMode
+                      ? "bg-purple-500 hover:bg-purple-600"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  } transition-colors duration-200 text-white`}
+                >
+                  <Camera size={20} />
+                  Capture Screenshot
+                </button>
               </div>
-            )}
-          </div>
+
+              {screenshotUrl && (
+                <div className="space-y-4">
+                  <div className="relative rounded-lg overflow-hidden border-2 border-gray-300">
+                    <img
+                      src={screenshotUrl}
+                      alt="Screenshot"
+                      className="w-full h-auto"
+                    />
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button
+                      onClick={downloadScreenshot}
+                      className="px-6 py-3 rounded-full bg-green-500 hover:bg-green-600 flex items-center gap-2 transition-colors duration-200 text-white"
+                    >
+                      <Download size={20} />
+                      Download Screenshot
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-8 text-center text-gray-400 text-sm">
             {isRecording ? (
               <p className="animate-pulse">
                 Recording in progress... Press Stop when you're ready
               </p>
+            ) : isTakingScreenshot ? (
+              <p>Click Capture Screenshot to grab your screen content</p>
             ) : (
               <p>Choose your options then click Start Recording</p>
             )}
