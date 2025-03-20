@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Mic,
   MicOff,
@@ -10,6 +10,10 @@ import {
   Moon,
   Sun,
   Github,
+  Settings,
+  Clock,
+  Info,
+  X,
 } from "lucide-react";
 
 function App() {
@@ -19,14 +23,51 @@ function App() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recordingQuality, setRecordingQuality] = useState("high");
+  const [showSettings, setShowSettings] = useState(false);
+  const [showTips, setShowTips] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamsRef = useRef<MediaStream[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  // Recording timer
+  useEffect(() => {
+    if (isRecording) {
+      setRecordingTime(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordingTime((prevTime) => prevTime + 1);
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isRecording]);
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, "0")}:${remainingSeconds
+      .toString()
+      .padStart(2, "0")}`;
+  };
 
   const startRecording = async () => {
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: {
+          // Apply quality settings
+          frameRate: recordingQuality === "high" ? 30 : 15,
+          width: recordingQuality === "high" ? 1920 : 1280,
+          height: recordingQuality === "high" ? 1080 : 720,
+        },
       });
 
       displayStream.getVideoTracks()[0].addEventListener("ended", () => {
@@ -38,7 +79,10 @@ function App() {
 
       if (audioEnabled) {
         const audioStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
         });
         combinedStream = new MediaStream([
           ...displayStream.getTracks(),
@@ -47,7 +91,15 @@ function App() {
         streamsRef.current.push(audioStream);
       }
 
-      const mediaRecorder = new MediaRecorder(combinedStream);
+      const options = {
+        mimeType: "video/webm;codecs=vp9",
+        videoBitsPerSecond: recordingQuality === "high" ? 2500000 : 1000000,
+      };
+
+      const mediaRecorder = new MediaRecorder(
+        combinedStream,
+        options as MediaRecorderOptions
+      );
       mediaRecorderRef.current = mediaRecorder;
 
       const chunks: Blob[] = [];
@@ -106,7 +158,14 @@ function App() {
     document.body.appendChild(a);
     a.style.display = "none";
     a.href = url;
-    a.download = "screen-recording.webm";
+    const date = new Date();
+    const formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}_${date
+      .getHours()
+      .toString()
+      .padStart(2, "0")}-${date.getMinutes().toString().padStart(2, "0")}`;
+    a.download = `screen-recording_${formattedDate}.webm`;
     a.click();
     URL.revokeObjectURL(url);
     document.body.removeChild(a);
@@ -155,6 +214,30 @@ function App() {
 
             <div className="flex items-center gap-4">
               <button
+                onClick={() => setShowTips(!showTips)}
+                className={`p-2 rounded-lg ${
+                  darkMode
+                    ? "bg-gray-700 hover:bg-gray-600"
+                    : "bg-white hover:bg-gray-100"
+                } transition-colors duration-200`}
+                title="Show Tips"
+              >
+                <Info size={20} />
+              </button>
+
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className={`p-2 rounded-lg ${
+                  darkMode
+                    ? "bg-gray-700 hover:bg-gray-600"
+                    : "bg-white hover:bg-gray-100"
+                } transition-colors duration-200`}
+                title="Settings"
+              >
+                <Settings size={20} />
+              </button>
+
+              <button
                 onClick={toggleTheme}
                 className={`p-2 rounded-lg ${
                   darkMode
@@ -185,6 +268,90 @@ function App() {
 
       {/* Main Content - Flexible space */}
       <main className="flex-grow px-4 py-8">
+        {/* Settings Panel */}
+        {showSettings && (
+          <div
+            className={`${
+              darkMode ? "bg-gray-700/90" : "bg-white/90"
+            } p-6 rounded-xl shadow-2xl backdrop-blur-sm max-w-md mx-auto mb-8 relative`}
+          >
+            <button
+              onClick={() => setShowSettings(false)}
+              className="absolute top-3 right-3"
+            >
+              <X size={20} />
+            </button>
+
+            <h3 className="text-xl font-bold mb-4">Recording Settings</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-2 font-medium">
+                  Recording Quality
+                </label>
+                <div className="flex gap-4">
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="quality"
+                      value="high"
+                      checked={recordingQuality === "high"}
+                      onChange={() => setRecordingQuality("high")}
+                      className="mr-2"
+                    />
+                    High (1080p)
+                  </label>
+                  <label className="inline-flex items-center">
+                    <input
+                      type="radio"
+                      name="quality"
+                      value="medium"
+                      checked={recordingQuality === "medium"}
+                      onChange={() => setRecordingQuality("medium")}
+                      className="mr-2"
+                    />
+                    Medium (720p)
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tips Panel */}
+        {showTips && (
+          <div
+            className={`${
+              darkMode ? "bg-gray-700/90" : "bg-white/90"
+            } p-6 rounded-xl shadow-2xl backdrop-blur-sm max-w-md mx-auto mb-8 relative`}
+          >
+            <button
+              onClick={() => setShowTips(false)}
+              className="absolute top-3 right-3"
+            >
+              <X size={20} />
+            </button>
+
+            <h3 className="text-xl font-bold mb-4">Screen Recording Tips</h3>
+
+            <ul className="list-disc pl-5 space-y-2">
+              <li>Enable audio to capture your voice during the recording</li>
+              <li>
+                Use high quality for clearer recordings (better for tutorials)
+              </li>
+              <li>
+                You can access browser tabs, applications, or your entire screen
+              </li>
+              <li>
+                Your recordings are stored locally and not uploaded anywhere
+              </li>
+              <li>
+                For longer recordings, ensure you have sufficient disk space
+              </li>
+            </ul>
+          </div>
+        )}
+
         <div
           className={`${
             darkMode ? "bg-gray-800/50" : "bg-white/50"
@@ -237,6 +404,22 @@ function App() {
               </button>
             </div>
 
+            {/* Recording Timer */}
+            {isRecording && (
+              <div className="flex justify-center items-center mt-4">
+                <div
+                  className={`flex items-center gap-2 p-3 rounded-lg ${
+                    darkMode ? "bg-gray-700" : "bg-white"
+                  }`}
+                >
+                  <Clock size={18} className="text-red-500 animate-pulse" />
+                  <span className="font-mono font-bold">
+                    {formatTime(recordingTime)}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {previewUrl && (
               <div className="space-y-4">
                 <div className="relative rounded-lg overflow-hidden bg-black">
@@ -246,12 +429,14 @@ function App() {
                     className="w-full"
                     onEnded={() => setIsPlaying(false)}
                   />
-                  <button
-                    onClick={togglePlayback}
-                    className="absolute bottom-4 left-4 p-3 rounded-full bg-white/20 hover:bg-white/30 transition-colors duration-200"
-                  >
-                    {isPlaying ? <Pause size={20} /> : <Play size={20} />}
-                  </button>
+                  <div className="absolute bottom-4 left-4 flex gap-2">
+                    <button
+                      onClick={togglePlayback}
+                      className="p-3 rounded-full bg-white/20 hover:bg-white/30 transition-colors duration-200"
+                    >
+                      {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex justify-center">
@@ -300,7 +485,7 @@ function App() {
                       : "text-blue-600 hover:text-blue-500"
                   } transition-colors duration-200`}
                 >
-                  Bhupesh Kmar
+                  Bhupesh
                 </a>{" "}
                 🚀
               </p>
